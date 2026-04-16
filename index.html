@@ -747,10 +747,13 @@ function initBranchState(bId) {
       {id:'PO-2026-012',date:'2026-03-30',items:16,value:22400,status:'Delivered'},
     ],
     pendingDeliveries: bId==='fab' ? [
-      {do:'DO-2026-042',from:'Central Warehouse',date:'2026-04-15',items:12,status:'In Transit'},
-      {do:'DO-2026-041',from:'Central Warehouse',date:'2026-04-14',items:8,status:'Arrived'},
+      {do:'DO-2026-042',from:'Central Warehouse',date:'2026-04-15',items:5,status:'In Transit',poRef:'PO-2026-015',
+        itemDetails:[{code:'DR12021',name:'Coffee Beans - HQR IRONMAN (Dark Roast)',sentQty:10000,unit:'g'},{code:'DR12022',name:'Coffee Beans - HQR MAE JAM (Medium Roast)',sentQty:10000,unit:'g'},{code:'BV05227',name:'Meiji Fresh Milk 5L',sentQty:20000,unit:'ml'},{code:'DR12015',name:'Mitrphol Syrup 800ml',sentQty:4800,unit:'ml'},{code:'SS12001',name:'Top Secret Sweet Mix 400g',sentQty:2400,unit:'g'}]},
+      {do:'DO-2026-041',from:'Central Warehouse',date:'2026-04-14',items:4,status:'Arrived',poRef:'PO-2026-015',
+        itemDetails:[{code:'DR12024',name:'Matcha Uji Premium (P3)',sentQty:1000,unit:'g'},{code:'DR12023',name:'Matcha Nishio (P1)',sentQty:1000,unit:'g'},{code:'DR12011',name:'Tulip Dark Cocoa Powder 440g',sentQty:1320,unit:'g'},{code:'DR12026',name:'HQR Original Tea',sentQty:600,unit:'g'}]},
     ] : [
-      {do:'DO-2026-043',from:'Central Warehouse',date:'2026-04-15',items:6,status:'In Transit'},
+      {do:'DO-2026-043',from:'Central Warehouse',date:'2026-04-15',items:3,status:'In Transit',poRef:'PO-2026-016',
+        itemDetails:[{code:'DR12021',name:'Coffee Beans - HQR IRONMAN (Dark Roast)',sentQty:5000,unit:'g'},{code:'BV05227',name:'Meiji Fresh Milk 5L',sentQty:15000,unit:'ml'},{code:'DR12015',name:'Mitrphol Syrup 800ml',sentQty:3200,unit:'ml'}]},
     ],
     receivingHistory: bId==='fab' ? [
       {grn:'GRN-2026-038',do:'DO-2026-040',date:'2026-04-13',items:15,status:'Complete',by:'Somchai K.'},
@@ -1512,18 +1515,31 @@ function confirmPO(poId) {
 
   // Create a pending delivery for this PO
   const doNum = 'DO-2026-' + String(43 + pendingDeliveries.length).padStart(3,'0');
-  pendingDeliveries.unshift({
+  const delivery = {
     do: doNum,
     from: 'Central Warehouse',
     date: '2026-04-16',
     items: po.items.length,
     status: 'In Transit',
     poRef: poId,
-    itemDetails: po.items
-  });
+    itemDetails: po.items.map(it => ({
+      code: it.code, name: it.name, sentQty: it.orderQty, unit: it.unit
+    }))
+  };
+  pendingDeliveries.unshift(delivery);
 
   updateReceivingBadge();
   renderPurchase();
+
+  // Demo: warehouse processes and dispatches goods (auto-arrive after 2s)
+  setTimeout(() => {
+    delivery.status = 'Arrived';
+    po.status = 'Delivered';
+    updateReceivingBadge();
+    // If user is on receiving page, re-render
+    if (document.getElementById('page-receiving').classList.contains('active')) renderReceiving();
+    if (document.getElementById('page-purchase').classList.contains('active')) { renderPOHistory(); }
+  }, 2000);
 }
 
 function cancelPO(poId) {
@@ -1593,12 +1609,24 @@ function renderReceiving() {
 }
 
 function receiveDelivery(doNum) {
-  const items = INGREDIENTS.slice(0,6).map(ing => ({
-    code: ing.code, name: ing.name, sentQty: Math.round(Math.random()*5+1) * ing.orderSize,
-    unit: ing.orderUnit, received: 0
-  }));
+  const delivery = pendingDeliveries.find(d => d.do === doNum);
+  let items;
+  if (delivery && delivery.itemDetails && delivery.itemDetails.length) {
+    // Use actual PO items from this delivery
+    items = delivery.itemDetails.map(it => ({
+      code: it.code, name: it.name, sentQty: it.sentQty || it.orderQty, unit: it.unit
+    }));
+  } else {
+    // Fallback for old demo deliveries without item details
+    items = INGREDIENTS.slice(0,6).map(ing => ({
+      code: ing.code, name: ing.name, sentQty: Math.round(Math.random()*5+1) * ing.orderSize, unit: ing.orderUnit
+    }));
+  }
+  document.querySelector('#receiveModal .modal-header h3').textContent = 'Receive Goods';
+  document.querySelector('#receiveModal .modal-footer').innerHTML = `<button class="btn btn-outline" onclick="closeModal('receiveModal')">Cancel</button><button class="btn btn-gold" onclick="confirmReceive()">Confirm Receiving</button>`;
   document.getElementById('receiveModalBody').innerHTML = `
-    <p style="margin-bottom:16px;color:var(--text2)">Delivery: <b>${doNum}</b> | Verify quantities received and update stock</p>
+    <p style="margin-bottom:8px;color:var(--text2)">Delivery: <b>${doNum}</b>${delivery?.poRef ? ` | PO: <b>${delivery.poRef}</b>` : ''} | From: Central Warehouse</p>
+    <p style="margin-bottom:16px;color:var(--text2);font-size:12px">Verify quantities received against dispatch note. Adjust if any discrepancy.</p>
     <table style="width:100%"><thead><tr><th>Ingredient</th><th class="text-right">Sent Qty</th><th>Unit</th><th class="text-center">Received Qty</th><th class="text-center">OK?</th></tr></thead>
     <tbody>${items.map(it => `<tr><td style="font-size:12px">${it.name}</td><td class="text-right">${it.sentQty.toLocaleString()}</td><td>${it.unit}</td><td class="text-center"><input type="number" value="${it.sentQty}" min="0" style="width:80px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px;border-radius:4px;text-align:center" data-code="${it.code}" data-sent="${it.sentQty}"></td><td class="text-center">✅</td></tr>`).join('')}</tbody></table>`;
   document.getElementById('receiveModal').classList.add('show');
