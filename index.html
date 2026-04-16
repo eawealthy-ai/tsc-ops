@@ -197,15 +197,17 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
       <div class="nav-item" data-page="pos"><span class="icon">🛒</span><span>POS Sales</span></div>
       <div class="nav-item" data-page="stock"><span class="icon">📦</span><span>Stock Management</span></div>
       <div class="nav-item" data-page="purchase"><span class="icon">🛍️</span><span>Purchase Orders</span></div>
-      <div class="nav-item" data-page="receiving"><span class="icon">🚚</span><span>Goods Receiving</span></div>
+      <div class="nav-item" data-page="receiving"><span class="icon">🚚</span><span>Goods Receiving</span><span class="badge" id="receivingBadge" style="display:none">0</span></div>
       <div class="nav-item" data-page="targets"><span class="icon">🎯</span><span>Sales Targets</span></div>
       <div class="nav-item" data-page="promos"><span class="icon">🏷️</span><span>Promotions</span></div>
       <div class="nav-item" data-page="alerts"><span class="icon">🔔</span><span>Alerts</span><span class="badge" id="alertBadge">3</span></div>
     </nav>
     <div class="branch-select">
       <label>Branch</label>
-      <select id="branchSelect">
-        <option value="fab">FAB Avenue</option>
+      <select id="branchSelect" onchange="switchBranch(this.value)">
+        <option value="all">All Branches (Overall)</option>
+        <option value="fab" selected>FAB Avenue</option>
+        <option value="rest">Rest Area</option>
       </select>
     </div>
   </aside>
@@ -220,6 +222,35 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
         <button class="btn btn-gold" onclick="exportDailyReport()">Export Report</button>
       </div>
 
+      <!-- OVERALL DASHBOARD (hidden by default) -->
+      <div id="overallDashboard" style="display:none">
+        <div class="cards">
+          <div class="card"><div class="card-label">Total Revenue (All)</div><div class="card-value gold" id="overallRevenue">฿0</div><div class="card-sub" id="overallRevSub">All branches combined</div></div>
+          <div class="card"><div class="card-label">Total Items Sold</div><div class="card-value blue" id="overallItems">0</div><div class="card-sub">cups across all branches</div></div>
+          <div class="card"><div class="card-label">Total Alerts</div><div class="card-value red" id="overallAlerts">0</div><div class="card-sub">across all branches</div></div>
+          <div class="card"><div class="card-label">Pending Deliveries</div><div class="card-value" style="color:var(--orange)" id="overallPending">0</div><div class="card-sub">across all branches</div></div>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-title">Branch Performance Comparison</div>
+          <table><thead><tr><th>Branch</th><th class="text-right">Revenue</th><th class="text-right">Items</th><th class="text-right">% Target</th><th class="text-center">Stock Status</th><th class="text-center">Pending</th></tr></thead>
+          <tbody id="overallBranchTable"></tbody></table>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+          <div class="chart-area">
+            <div style="font-weight:600;margin-bottom:12px">Sales by Category (All Branches)</div>
+            <div class="bar-chart" id="overallChart"></div>
+          </div>
+          <div class="card">
+            <div style="font-weight:600;margin-bottom:16px">Revenue by Branch</div>
+            <div id="overallBranchChart"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BRANCH-SPECIFIC DASHBOARD -->
+      <div id="branchDashboard">
       <div id="dashAlerts"></div>
 
       <div class="cards">
@@ -245,6 +276,7 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
         <table><thead><tr><th>#</th><th>Menu Item</th><th>Category</th><th class="text-right">Qty Sold</th><th class="text-right">Revenue</th><th class="text-right">% of Target</th></tr></thead>
         <tbody id="dashTopSelling"></tbody></table>
       </div>
+      </div><!-- /branchDashboard -->
     </div>
 
     <!-- POS SALES -->
@@ -513,6 +545,10 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
         <button class="btn btn-outline" onclick="clearAlerts()">Mark All Read</button>
       </div>
       <div id="alertsList"></div>
+      <div style="margin-top:24px">
+        <h3 style="margin-bottom:12px">📋 Emergency Orders Log</h3>
+        <div id="emergencyLog"></div>
+      </div>
     </div>
 
   </main>
@@ -671,33 +707,186 @@ const TODAY_IS_WEEKEND = [0,6].includes(new Date('2026-04-16').getDay()); // Thu
 const TODAY_BUDGET = TODAY_IS_WEEKEND ? DAILY_BUDGET_WEEKEND : DAILY_BUDGET_WEEKDAY;
 const WEEKLY_BUDGET = DAILY_BUDGET_WEEKDAY * 5 + DAILY_BUDGET_WEEKEND * 2;
 
-// State
-let todaySales = {};
-let promotions = [
-  {id:1,name:'Matcha Festival',start:'2026-04-14',end:'2026-04-20',menus:['TC105001','TC105002'],demandIncrease:30,discount:15,active:true},
-  {id:2,name:'Summer Coffee Deal',start:'2026-04-16',end:'2026-04-30',menus:['TC101001','TC101002'],demandIncrease:20,discount:10,active:true},
-];
-let alerts = [];
-let poHistory = [
-  {id:'PO-2026-015',date:'2026-04-07',items:18,value:28450,status:'Delivered'},
-  {id:'PO-2026-014',date:'2026-03-31',items:22,value:31200,status:'Delivered'},
-  {id:'PO-2026-013',date:'2026-03-24',items:15,value:24800,status:'Delivered'},
-];
-let pendingDeliveries = [
-  {do:'DO-2026-042',from:'Central Warehouse',date:'2026-04-15',items:12,status:'In Transit'},
-  {do:'DO-2026-041',from:'Central Warehouse',date:'2026-04-14',items:8,status:'Arrived'},
-];
-let receivingHistory = [
-  {grn:'GRN-2026-038',do:'DO-2026-040',date:'2026-04-13',items:15,status:'Complete',by:'Somchai K.'},
-  {grn:'GRN-2026-037',do:'DO-2026-039',date:'2026-04-10',items:10,status:'Complete',by:'Nattapong P.'},
-];
+// Branch definitions
+const BRANCHES = {
+  fab: {name:'FAB Avenue', budget:1000000, scale:1.0},
+  rest: {name:'Rest Area', budget:750000, scale:0.7}
+};
+let currentBranch = 'fab';
 
-// Initialize today's sales from avg daily
-MENUS.forEach(m => {
-  const avgDaily = Math.round((ACTUAL_SALES[m.id]||0) / REPORT_DAYS);
-  todaySales[m.id] = avgDaily + Math.floor(Math.random()*5) - 2;
-  if (todaySales[m.id] < 0) todaySales[m.id] = 0;
-});
+// State - per branch
+const branchState = {};
+function initBranchState(bId) {
+  const br = BRANCHES[bId];
+  const sales = {};
+  MENUS.forEach(m => {
+    const avgDaily = Math.round((ACTUAL_SALES[m.id]||0) / REPORT_DAYS * br.scale);
+    sales[m.id] = Math.max(0, avgDaily + Math.floor(Math.random()*5) - 2);
+  });
+  const stock = {};
+  INGREDIENTS.forEach(ing => {
+    stock[ing.code] = Math.round(ing.stock * br.scale) + Math.floor(Math.random()*500);
+  });
+  branchState[bId] = {
+    todaySales: sales,
+    stock: stock,
+    promotions: [
+      {id:1,name:'Matcha Festival',start:'2026-04-14',end:'2026-04-20',menus:['TC105001','TC105002'],demandIncrease:30,discount:15,active:true},
+      {id:2,name:'Summer Coffee Deal',start:'2026-04-16',end:'2026-04-30',menus:['TC101001','TC101002'],demandIncrease:20,discount:10,active:true},
+    ],
+    alerts: [],
+    emergencyHistory: [],
+    poHistory: bId==='fab' ? [
+      {id:'PO-2026-015',date:'2026-04-07',items:18,value:28450,status:'Delivered'},
+      {id:'PO-2026-014',date:'2026-03-31',items:22,value:31200,status:'Delivered'},
+      {id:'PO-2026-013',date:'2026-03-24',items:15,value:24800,status:'Delivered'},
+    ] : [
+      {id:'PO-2026-016',date:'2026-04-08',items:12,value:18200,status:'Delivered'},
+      {id:'PO-2026-012',date:'2026-03-30',items:16,value:22400,status:'Delivered'},
+    ],
+    pendingDeliveries: bId==='fab' ? [
+      {do:'DO-2026-042',from:'Central Warehouse',date:'2026-04-15',items:12,status:'In Transit'},
+      {do:'DO-2026-041',from:'Central Warehouse',date:'2026-04-14',items:8,status:'Arrived'},
+    ] : [
+      {do:'DO-2026-043',from:'Central Warehouse',date:'2026-04-15',items:6,status:'In Transit'},
+    ],
+    receivingHistory: bId==='fab' ? [
+      {grn:'GRN-2026-038',do:'DO-2026-040',date:'2026-04-13',items:15,status:'Complete',by:'Somchai K.'},
+      {grn:'GRN-2026-037',do:'DO-2026-039',date:'2026-04-10',items:10,status:'Complete',by:'Nattapong P.'},
+    ] : [
+      {grn:'GRN-2026-036',do:'DO-2026-038',date:'2026-04-12',items:8,status:'Complete',by:'Preecha M.'},
+    ],
+  };
+}
+Object.keys(BRANCHES).forEach(b => initBranchState(b));
+
+// Active state aliases (point to current branch)
+let todaySales = branchState.fab.todaySales;
+let promotions = branchState.fab.promotions;
+let alerts = branchState.fab.alerts;
+let emergencyHistory = branchState.fab.emergencyHistory;
+let poHistory = branchState.fab.poHistory;
+let pendingDeliveries = branchState.fab.pendingDeliveries;
+let receivingHistory = branchState.fab.receivingHistory;
+
+function switchBranch(bId) {
+  currentBranch = bId;
+  if (bId === 'all') {
+    renderOverallDashboard();
+    return;
+  }
+  const st = branchState[bId];
+  todaySales = st.todaySales;
+  promotions = st.promotions;
+  alerts = st.alerts;
+  emergencyHistory = st.emergencyHistory;
+  poHistory = st.poHistory;
+  pendingDeliveries = st.pendingDeliveries;
+  receivingHistory = st.receivingHistory;
+  // Restore ingredient stock for this branch
+  INGREDIENTS.forEach(ing => { ing.stock = st.stock[ing.code]; });
+  // Update subtitle
+  document.querySelector('#page-dashboard .subtitle').textContent =
+    `Top Secret Cafe - ${BRANCHES[bId].name} | วันพุธ 16 เมษายน 2026`;
+  // Show branch pages, hide overall
+  document.getElementById('overallDashboard').style.display = 'none';
+  document.getElementById('branchDashboard').style.display = '';
+  // Re-render active page
+  const activePage = document.querySelector('.nav-item.active');
+  if (activePage) refreshPage(activePage.dataset.page);
+}
+
+function renderOverallDashboard() {
+  // Hide branch-specific dashboard, show overall
+  document.getElementById('branchDashboard').style.display = 'none';
+  document.getElementById('overallDashboard').style.display = '';
+  document.querySelector('#page-dashboard .subtitle').textContent =
+    'Top Secret Cafe - All Branches | วันพุธ 16 เมษายน 2026';
+
+  // Aggregate data
+  let totalRev = 0, totalItems = 0, totalAlerts = 0, totalPending = 0;
+  const branchRows = [];
+  const catTotals = {};
+
+  Object.entries(BRANCHES).forEach(([bId, br]) => {
+    const st = branchState[bId];
+    let bRev = 0, bItems = 0;
+    MENUS.forEach(m => {
+      const qty = st.todaySales[m.id]||0;
+      bRev += qty * m.price;
+      bItems += qty;
+      const cat = m.cat;
+      if (!catTotals[cat]) catTotals[cat] = 0;
+      catTotals[cat] += qty * m.price;
+    });
+    // count alerts for this branch
+    const bAlerts = [];
+    INGREDIENTS.forEach(ing => {
+      const stk = st.stock[ing.code];
+      const usage = calcDailyUsage();
+      const dailyUse = usage[ing.code] || 0;
+      const daysLeft = dailyUse > 0 ? Math.floor(stk / dailyUse) : 99;
+      if (daysLeft <= 2) bAlerts.push({type:'danger'});
+      else if (daysLeft <= 5) bAlerts.push({type:'warn'});
+    });
+    const bPending = st.pendingDeliveries.length;
+    const budgetDaily = br.budget / (22 + 8*1.3);
+    const tgtPct = budgetDaily > 0 ? (bRev / budgetDaily * 100) : 0;
+
+    totalRev += bRev; totalItems += bItems;
+    totalAlerts += bAlerts.length; totalPending += bPending;
+
+    branchRows.push({
+      id: bId, name: br.name, rev: bRev, items: bItems,
+      alerts: bAlerts.length, pending: bPending, budget: br.budget,
+      tgtPct, danger: bAlerts.filter(a=>a.type==='danger').length
+    });
+  });
+
+  const totalBudget = Object.values(BRANCHES).reduce((s,b) => s+b.budget, 0);
+  const dailyBudgetAll = totalBudget / (22 + 8*1.3);
+
+  // Render overall cards
+  document.getElementById('overallRevenue').textContent = fmt(totalRev);
+  document.getElementById('overallRevSub').textContent = `Total budget: ${fmt(totalBudget)}/mo | Target: ${fmt(Math.round(dailyBudgetAll))}/day`;
+  document.getElementById('overallItems').textContent = totalItems;
+  document.getElementById('overallAlerts').textContent = totalAlerts;
+  document.getElementById('overallPending').textContent = totalPending;
+
+  // Branch comparison table
+  document.getElementById('overallBranchTable').innerHTML = branchRows.map(b => {
+    const cls = b.tgtPct >= 80 ? 'status-ok' : b.tgtPct >= 50 ? 'status-warn' : 'status-danger';
+    return `<tr onclick="document.getElementById('branchSelect').value='${b.id}';switchBranch('${b.id}')" style="cursor:pointer">
+      <td><b>${b.name}</b></td>
+      <td class="text-right">${fmt(b.rev)}</td>
+      <td class="text-right">${b.items}</td>
+      <td class="text-right"><span class="status ${cls}">${pct(b.tgtPct)}</span></td>
+      <td class="text-center">${b.danger > 0 ? `<span style="color:var(--red)">${b.danger} critical</span>` : `<span style="color:var(--green)">OK</span>`}</td>
+      <td class="text-center">${b.pending}</td>
+    </tr>`;
+  }).join('');
+
+  // Overall category chart
+  const maxVal = Math.max(...Object.values(catTotals), 1);
+  const colors = ['#c8a24e','#3498db','#2ecc71','#e74c3c','#9b59b6','#f39c12','#1abc9c','#e67e22'];
+  let ci = 0;
+  document.getElementById('overallChart').innerHTML = Object.entries(catTotals).map(([k,v]) =>
+    `<div class="bar-col"><div class="bar-value">${fmt(v)}</div><div class="bar" style="height:${Math.max(v/maxVal*140,4)}px;background:${colors[ci++%colors.length]}"></div><div class="bar-label">${k.replace('(','').replace(')','')}</div></div>`
+  ).join('');
+
+  // Branch revenue comparison
+  const maxRev = Math.max(...branchRows.map(b=>b.rev), 1);
+  document.getElementById('overallBranchChart').innerHTML = branchRows.map((b,i) =>
+    `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="width:100px;font-size:13px;font-weight:600">${b.name}</div>
+      <div style="flex:1;background:var(--surface2);border-radius:6px;height:28px;overflow:hidden">
+        <div style="height:100%;width:${b.rev/maxRev*100}%;background:${colors[i]};border-radius:6px;display:flex;align-items:center;padding:0 8px">
+          <span style="font-size:11px;font-weight:600;color:#fff">${fmt(b.rev)}</span>
+        </div>
+      </div>
+    </div>`
+  ).join('');
+}
 
 // ==================== NAVIGATION ====================
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -760,6 +949,7 @@ function checkAlerts() {
 
 // ==================== DASHBOARD ====================
 function renderDashboard() {
+  if (currentBranch === 'all') { renderOverallDashboard(); return; }
   checkAlerts();
   const totalRev = MENUS.reduce((s,m) => s + (todaySales[m.id]||0)*m.price, 0);
   const totalItems = MENUS.reduce((s,m) => s + (todaySales[m.id]||0), 0);
@@ -1323,6 +1513,7 @@ function confirmPO(poId) {
     itemDetails: po.items
   });
 
+  updateReceivingBadge();
   renderPurchase();
 }
 
@@ -1413,7 +1604,7 @@ function confirmReceive() {
     const sent = parseInt(inp.dataset.sent);
     const rcvd = parseInt(inp.value);
     const ing = getIngredient(code);
-    if (ing) ing.stock += rcvd * (ing.unit === 'g' || ing.unit === 'ml' ? 1 : ing.orderSize);
+    if (ing) ing.stock += rcvd;
     if (rcvd !== sent) disc++;
   });
   const doNum = window._currentDO;
@@ -1423,11 +1614,22 @@ function confirmReceive() {
   document.getElementById('rcvToday').textContent = parseInt(document.getElementById('rcvToday').textContent) + 1;
   if (disc) document.getElementById('rcvDisc').textContent = disc;
   closeModal('receiveModal');
+  recalcStock();
+  updateReceivingBadge();
   renderReceiving();
   alert(`Goods received! GRN: ${grnNum}\n${disc ? disc + ' discrepancies found.' : 'All items matched.'}\nStock updated automatically.`);
 }
 
 function showReceiveModal() { receiveDelivery('DO-2026-041'); }
+
+function updateReceivingBadge() {
+  const count = pendingDeliveries.filter(d => d.status === 'Arrived').length;
+  const badge = document.getElementById('receivingBadge');
+  if (badge) {
+    badge.textContent = count;
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+}
 
 // ==================== TARGETS ====================
 let targetView = 'daily';
@@ -1535,6 +1737,7 @@ function renderAlerts() {
   checkAlerts();
   if (!alerts.length) {
     document.getElementById('alertsList').innerHTML = '<div class="card" style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:12px">✅</div><h3 style="color:var(--green)">All Clear</h3><p style="color:var(--text2);margin-top:8px">No alerts at this time. All stock levels are sufficient.</p></div>';
+    renderEmergencyLog();
     return;
   }
   document.getElementById('alertsList').innerHTML = alerts.map(a =>
@@ -1544,21 +1747,101 @@ function renderAlerts() {
       ${a.type==='danger' ? `<button class="btn btn-red btn-sm" onclick="emergencyOrder('${a.code}')">Emergency Order</button>` : `<button class="btn btn-outline btn-sm" onclick="addToPO('${a.code}')">Add to PO</button>`}
     </div>`
   ).join('');
+  renderEmergencyLog();
 }
 
 function emergencyOrder(code) {
   const ing = getIngredient(code);
   if (!ing) return;
-  alert(`🚨 Emergency Order Sent!\n\nItem: ${ing.name}\nQuantity: ${ing.orderSize * 2} ${ing.orderUnit}\n\nOrder sent to Central Warehouse for urgent delivery (same day).`);
+  const qty = ing.orderSize * 2;
+  const now = new Date();
+  const eo = {
+    id: 'EO-' + now.getFullYear() + '-' + String(emergencyHistory.length + 1).padStart(3,'0'),
+    date: now.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'}),
+    time: now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}),
+    code: ing.code, name: ing.name, qty, unit: ing.orderUnit,
+    cost: qty * (ing.costPer || 0),
+    status: 'Sent', reason: 'Critical low stock'
+  };
+  emergencyHistory.unshift(eo);
+  renderEmergencyLog();
+  // Show confirmation modal
+  document.getElementById('alertsList').insertAdjacentHTML('afterbegin',
+    `<div class="alert-banner" id="eoBanner-${eo.id}" style="background:var(--green);border-color:var(--green);color:#fff;margin-bottom:12px">
+      <span class="alert-icon">✅</span>
+      <div class="alert-text"><div class="alert-title">Emergency Order ${eo.id} Sent!</div>
+      <div class="alert-desc">${ing.name} × ${qty} ${ing.unit} — sent to Central Warehouse for urgent same-day delivery</div></div>
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff" onclick="markEOReceived('${eo.id}')">Mark Received</button>
+    </div>`);
+  setTimeout(()=>{ const b = document.getElementById('eoBanner-'+eo.id); if(b) b.remove(); }, 8000);
 }
 
-function addToPO(code) { alert('Added to next purchase order.'); }
+function markEOReceived(eoId) {
+  const eo = emergencyHistory.find(e => e.id === eoId);
+  if (!eo) return;
+  eo.status = 'Received';
+  eo.receivedAt = new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+  const ing = getIngredient(eo.code);
+  if (ing) { ing.stock += eo.qty; recalcStock(); }
+  const b = document.getElementById('eoBanner-'+eoId); if(b) b.remove();
+  renderEmergencyLog();
+}
+
+function cancelEO(eoId) {
+  const eo = emergencyHistory.find(e => e.id === eoId);
+  if (!eo || eo.status !== 'Sent') return;
+  if (!confirm(`Cancel emergency order ${eoId}?`)) return;
+  eo.status = 'Cancelled';
+  renderEmergencyLog();
+}
+
+function renderEmergencyLog() {
+  const el = document.getElementById('emergencyLog');
+  if (!el) return;
+  if (!emergencyHistory.length) {
+    el.innerHTML = '<div class="card" style="text-align:center;padding:24px;color:var(--text2)">No emergency orders yet.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="card" style="padding:0;overflow:auto"><table class="data-table">
+    <thead><tr><th>Order ID</th><th>Date</th><th>Time</th><th>Item</th><th>Qty</th><th>Est. Cost</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>${emergencyHistory.map(e => {
+      const statusColor = e.status==='Sent'?'var(--orange)':e.status==='Received'?'var(--green)':'var(--text2)';
+      const statusLabel = e.status==='Received' ? `Received ${e.receivedAt||''}` : e.status;
+      return `<tr>
+        <td><strong>${e.id}</strong></td><td>${e.date}</td><td>${e.time}</td>
+        <td>${e.name}</td><td>${e.qty} ${e.unit}</td>
+        <td>฿${e.cost.toLocaleString()}</td>
+        <td><span style="color:${statusColor};font-weight:600">${statusLabel}</span></td>
+        <td>${e.status==='Sent'?`<button class="btn btn-green btn-sm" onclick="markEOReceived('${e.id}')">Receive</button> <button class="btn btn-outline btn-sm" onclick="cancelEO('${e.id}')">Cancel</button>`:'-'}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function addToPO(code) {
+  const ing = getIngredient(code);
+  if (!ing) return;
+  const already = poRecommendedRows.find(r => r.code === code);
+  if (already) {
+    already.qty += ing.orderSize;
+  } else {
+    const dailyUse = calcDailyUsage()[code] || 1;
+    poRecommendedRows.push({
+      code: ing.code, name: ing.name, unit: ing.orderUnit,
+      current: ing.stock, dailyUse, weeklyNeed: Math.ceil(dailyUse * 7),
+      qty: ing.orderSize, cost: ing.orderSize * (ing.costPer || 0),
+      selected: true
+    });
+  }
+  document.querySelector('.nav-item[data-page="purchase"]').click();
+  renderPOTable();
+}
 function clearAlerts() { alerts = []; renderAlerts(); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function exportDailyReport() { alert('Daily report exported to PDF.'); }
 
 // ==================== INIT ====================
 renderDashboard();
+updateReceivingBadge();
 document.getElementById('posDate').value = '2026-04-16';
 </script>
 </body>
