@@ -1889,8 +1889,11 @@ function addToPO(code) {
       selected: true
     });
   }
-  document.querySelector('.nav-item[data-page="purchase"]').click();
-  renderPOTable();
+  // Show brief confirmation on the button
+  event.target.textContent = '✓ Added';
+  event.target.style.background = 'var(--green)';
+  event.target.style.color = '#fff';
+  setTimeout(() => { event.target.textContent = 'Add to PO'; event.target.style.background = ''; event.target.style.color = ''; }, 1500);
 }
 function clearAlerts() { alerts = []; renderAlerts(); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
