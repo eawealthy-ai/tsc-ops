@@ -930,10 +930,13 @@ function calcDailyUsage() {
   return usage;
 }
 
+let eoSentCodes = new Set(); // track ingredients with active emergency orders
+
 function checkAlerts() {
   alerts = [];
   const usage = calcDailyUsage();
   INGREDIENTS.forEach(ing => {
+    if (eoSentCodes.has(ing.code)) return; // skip — emergency order already sent
     const dailyUse = usage[ing.code] || 0;
     const daysLeft = dailyUse > 0 ? Math.floor(ing.stock / dailyUse) : 999;
     if (daysLeft <= 2 && dailyUse > 0) {
@@ -1764,13 +1767,31 @@ function emergencyOrder(code) {
     status: 'Sent', reason: 'Critical low stock'
   };
   emergencyHistory.unshift(eo);
-  renderEmergencyLog();
-  // Show confirmation modal
+  eoSentCodes.add(code);
+
+  // Remove this critical alert from alerts list
+  alerts = alerts.filter(a => a.code !== code);
+  // Update alert badge count
+  const alertBadge = document.getElementById('alertBadge');
+  if (alertBadge) { alertBadge.textContent = alerts.length; }
+
+  // Re-render alerts list (removes the critical message)
+  renderAlerts();
+
+  // Also remove from dashboard alert banners
+  const dashAlerts = document.getElementById('dashAlerts');
+  if (dashAlerts) {
+    dashAlerts.innerHTML = alerts.filter(a=>a.type==='danger').slice(0,2).map(a=>
+      `<div class="alert-banner"><span class="alert-icon">${a.icon}</span><div class="alert-text"><div class="alert-title">${a.title}</div><div class="alert-desc">${a.desc}</div></div><button class="btn btn-red btn-sm" onclick="emergencyOrder('${a.code}')">Emergency Order</button></div>`
+    ).join('');
+  }
+
+  // Show success banner at top of alerts
   document.getElementById('alertsList').insertAdjacentHTML('afterbegin',
     `<div class="alert-banner" id="eoBanner-${eo.id}" style="background:var(--green);border-color:var(--green);color:#fff;margin-bottom:12px">
       <span class="alert-icon">✅</span>
       <div class="alert-text"><div class="alert-title">Emergency Order ${eo.id} Sent!</div>
-      <div class="alert-desc">${ing.name} × ${qty} ${ing.unit} — sent to Central Warehouse for urgent same-day delivery</div></div>
+      <div class="alert-desc">${ing.name} × ${qty} ${ing.orderUnit} — sent to Central Warehouse for urgent same-day delivery</div></div>
       <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff" onclick="markEOReceived('${eo.id}')">Mark Received</button>
     </div>`);
   setTimeout(()=>{ const b = document.getElementById('eoBanner-'+eo.id); if(b) b.remove(); }, 8000);
@@ -1781,6 +1802,7 @@ function markEOReceived(eoId) {
   if (!eo) return;
   eo.status = 'Received';
   eo.receivedAt = new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+  eoSentCodes.delete(eo.code);
   const ing = getIngredient(eo.code);
   if (ing) { ing.stock += eo.qty; recalcStock(); }
   const b = document.getElementById('eoBanner-'+eoId); if(b) b.remove();
@@ -1792,6 +1814,7 @@ function cancelEO(eoId) {
   if (!eo || eo.status !== 'Sent') return;
   if (!confirm(`Cancel emergency order ${eoId}?`)) return;
   eo.status = 'Cancelled';
+  eoSentCodes.delete(eo.code);
   renderEmergencyLog();
 }
 
