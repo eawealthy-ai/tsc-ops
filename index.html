@@ -465,13 +465,17 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
             <div class="tab active" id="poAddTabList" onclick="setAddPOMode('list')" style="padding:6px 14px;font-size:12px;cursor:pointer">From Inventory</div>
             <div class="tab" id="poAddTabManual" onclick="setAddPOMode('manual')" style="padding:6px 14px;font-size:12px;cursor:pointer">Manual Entry</div>
           </div>
-          <div id="poAddListMode" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <select id="poAddSelect" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
-              <option value="">-- Select Ingredient --</option>
-            </select>
-            <input type="number" id="poAddQty" placeholder="Qty" min="1" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
-            <button class="btn btn-green btn-sm" onclick="confirmAddPOItem()">Add</button>
-            <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
+          <div id="poAddListMode">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <div style="flex:1;min-width:220px;position:relative">
+                <input type="text" id="poAddSearch" placeholder="Search by code or name..." autocomplete="off" oninput="filterPOIngredients()" onfocus="filterPOIngredients()" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;box-sizing:border-box">
+                <input type="hidden" id="poAddSelect" value="">
+                <div id="poAddSearchResults" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:200px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;z-index:10"></div>
+              </div>
+              <input type="number" id="poAddQty" placeholder="Qty" min="1" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
+              <button class="btn btn-green btn-sm" onclick="confirmAddPOItem()">Add</button>
+              <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
+            </div>
           </div>
           <div id="poAddManualMode" style="display:none;gap:10px;align-items:center;flex-wrap:wrap">
             <input type="text" id="poManualName" placeholder="Item name" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
@@ -1488,25 +1492,60 @@ function toggleAllPO() {
 
 function showAddPOItem() {
   const row = document.getElementById('poAddItemRow');
-  row.style.display = 'flex';
-  const sel = document.getElementById('poAddSelect');
-  const existingCodes = new Set(poRecommendedRows.map(r => r.ing.code));
-  sel.innerHTML = '<option value="">-- Select Ingredient --</option>' +
-    INGREDIENTS.filter(ing => !existingCodes.has(ing.code)).map(ing =>
-      `<option value="${ing.code}">${ing.name} (${ing.unit}) — stock: ${ing.stock.toLocaleString()}</option>`
-    ).join('');
+  row.style.display = '';
+  document.getElementById('poAddSearch').value = '';
+  document.getElementById('poAddSelect').value = '';
   document.getElementById('poAddQty').value = '';
-  sel.focus();
-  // Auto-fill qty when ingredient selected
-  sel.onchange = function() {
-    const ing = getIngredient(this.value);
-    if (ing) document.getElementById('poAddQty').value = ing.orderSize;
-  };
+  document.getElementById('poAddSearchResults').style.display = 'none';
+  setAddPOMode('list');
+  setTimeout(() => document.getElementById('poAddSearch').focus(), 50);
 }
 
 function hideAddPOItem() {
   document.getElementById('poAddItemRow').style.display = 'none';
+  document.getElementById('poAddSearchResults').style.display = 'none';
 }
+
+function filterPOIngredients() {
+  const q = document.getElementById('poAddSearch').value.toLowerCase().trim();
+  const results = document.getElementById('poAddSearchResults');
+  const existingCodes = new Set(poRecommendedRows.map(r => r.ing.code));
+  const matches = INGREDIENTS.filter(ing =>
+    !existingCodes.has(ing.code) &&
+    (ing.code.toLowerCase().includes(q) || ing.name.toLowerCase().includes(q))
+  );
+  if (!matches.length) {
+    results.innerHTML = '<div style="padding:10px 12px;color:var(--text2);font-size:12px">No matching ingredients</div>';
+    results.style.display = '';
+    return;
+  }
+  results.innerHTML = matches.map(ing =>
+    `<div class="po-search-item" onclick="selectPOIngredient('${ing.code}')" style="padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);font-size:13px;transition:background .1s"
+      onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div><span style="font-family:monospace;color:var(--gold);font-size:11px;margin-right:8px">${ing.code}</span>${ing.name}</div>
+      <span style="color:var(--text2);font-size:11px">stock: ${ing.stock.toLocaleString()} ${ing.unit}</span>
+    </div>`
+  ).join('');
+  results.style.display = '';
+}
+
+function selectPOIngredient(code) {
+  const ing = getIngredient(code);
+  if (!ing) return;
+  document.getElementById('poAddSelect').value = code;
+  document.getElementById('poAddSearch').value = `${ing.code} — ${ing.name}`;
+  document.getElementById('poAddQty').value = ing.orderSize;
+  document.getElementById('poAddSearchResults').style.display = 'none';
+  document.getElementById('poAddQty').focus();
+}
+
+// Close search results when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#poAddListMode')) {
+    const r = document.getElementById('poAddSearchResults');
+    if (r) r.style.display = 'none';
+  }
+});
 
 function setAddPOMode(mode) {
   document.getElementById('poAddTabList').classList.toggle('active', mode==='list');
