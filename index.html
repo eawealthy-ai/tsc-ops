@@ -57,6 +57,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .card-value.red { color: var(--red); }
 .card-value.blue { color: var(--blue); }
 .card-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+.dash-link { cursor: pointer; transition: transform .15s, box-shadow .15s; }
+.dash-link:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(200,162,78,0.15); }
 
 /* Tables */
 .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
@@ -225,10 +227,10 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
       <!-- OVERALL DASHBOARD (hidden by default) -->
       <div id="overallDashboard" style="display:none">
         <div class="cards">
-          <div class="card"><div class="card-label">Total Revenue (All)</div><div class="card-value gold" id="overallRevenue">฿0</div><div class="card-sub" id="overallRevSub">All branches combined</div></div>
-          <div class="card"><div class="card-label">Total Items Sold</div><div class="card-value blue" id="overallItems">0</div><div class="card-sub">cups across all branches</div></div>
-          <div class="card"><div class="card-label">Total Alerts</div><div class="card-value red" id="overallAlerts">0</div><div class="card-sub">across all branches</div></div>
-          <div class="card"><div class="card-label">Pending Deliveries</div><div class="card-value" style="color:var(--orange)" id="overallPending">0</div><div class="card-sub">across all branches</div></div>
+          <div class="card dash-link" onclick="navTo('targets')"><div class="card-label">Total Revenue (All)</div><div class="card-value gold" id="overallRevenue">฿0</div><div class="card-sub" id="overallRevSub">All branches combined</div></div>
+          <div class="card dash-link" onclick="navTo('pos')"><div class="card-label">Total Items Sold</div><div class="card-value blue" id="overallItems">0</div><div class="card-sub">cups across all branches</div></div>
+          <div class="card dash-link" onclick="navTo('alerts')"><div class="card-label">Total Alerts</div><div class="card-value red" id="overallAlerts">0</div><div class="card-sub">across all branches</div></div>
+          <div class="card dash-link" onclick="navTo('receiving')"><div class="card-label">Pending Deliveries</div><div class="card-value" style="color:var(--orange)" id="overallPending">0</div><div class="card-sub">across all branches</div></div>
         </div>
 
         <div class="table-wrap">
@@ -254,24 +256,24 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
       <div id="dashAlerts"></div>
 
       <div class="cards">
-        <div class="card"><div class="card-label">Today's Revenue</div><div class="card-value gold" id="dashRevenue">฿0</div><div class="card-sub" id="dashRevenueTarget">Target: ฿0</div></div>
-        <div class="card"><div class="card-label">Items Sold</div><div class="card-value blue" id="dashItems">0</div><div class="card-sub" id="dashItemsSub">cups today</div></div>
-        <div class="card"><div class="card-label">Low Stock Alerts</div><div class="card-value red" id="dashAlertCount">3</div><div class="card-sub">ingredients below threshold</div></div>
-        <div class="card"><div class="card-label">Pending Orders</div><div class="card-value" style="color:var(--orange)" id="dashPending">2</div><div class="card-sub">waiting for delivery</div></div>
+        <div class="card dash-link" onclick="navTo('targets')"><div class="card-label">Today's Revenue</div><div class="card-value gold" id="dashRevenue">฿0</div><div class="card-sub" id="dashRevenueTarget">Target: ฿0</div></div>
+        <div class="card dash-link" onclick="navTo('pos')"><div class="card-label">Items Sold</div><div class="card-value blue" id="dashItems">0</div><div class="card-sub" id="dashItemsSub">cups today</div></div>
+        <div class="card dash-link" onclick="navTo('alerts')"><div class="card-label">Low Stock Alerts</div><div class="card-value red" id="dashAlertCount">3</div><div class="card-sub">ingredients below threshold</div></div>
+        <div class="card dash-link" onclick="navTo('receiving')"><div class="card-label">Pending Orders</div><div class="card-value" style="color:var(--orange)" id="dashPending">2</div><div class="card-sub">waiting for delivery</div></div>
       </div>
 
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
-        <div class="chart-area">
+        <div class="chart-area dash-link" onclick="navTo('pos')">
           <div style="font-weight:600;margin-bottom:12px">Sales by Category (Today)</div>
           <div class="bar-chart" id="dashChart"></div>
         </div>
-        <div class="card">
+        <div class="card dash-link" onclick="navTo('alerts')">
           <div style="font-weight:600;margin-bottom:16px">Recent Activity</div>
           <div class="timeline" id="dashTimeline"></div>
         </div>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap dash-link" onclick="navTo('pos')">
         <div class="table-title">Top Selling Items Today</div>
         <table><thead><tr><th>#</th><th>Menu Item</th><th>Category</th><th class="text-right">Qty Sold</th><th class="text-right">Revenue</th><th class="text-right">% of Target</th></tr></thead>
         <tbody id="dashTopSelling"></tbody></table>
@@ -898,6 +900,10 @@ document.querySelectorAll('.nav-item').forEach(item => {
     refreshPage(item.dataset.page);
   });
 });
+
+function navTo(page) {
+  document.querySelector(`.nav-item[data-page="${page}"]`).click();
+}
 
 function refreshPage(page) {
   switch(page) {
