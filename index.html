@@ -460,13 +460,27 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
           </div>
         </div>
         <!-- Inline add item row -->
-        <div id="poAddItemRow" style="display:none;background:var(--surface2);padding:12px 16px;border-bottom:1px solid var(--border);gap:10px;align-items:center;flex-wrap:wrap">
-          <select id="poAddSelect" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
-            <option value="">-- Select Ingredient --</option>
-          </select>
-          <input type="number" id="poAddQty" placeholder="Qty" min="1" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
-          <button class="btn btn-green btn-sm" onclick="confirmAddPOItem()">Add</button>
-          <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
+        <div id="poAddItemRow" style="display:none;background:var(--surface2);padding:12px 16px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <div class="tab active" id="poAddTabList" onclick="setAddPOMode('list')" style="padding:6px 14px;font-size:12px;cursor:pointer">From Inventory</div>
+            <div class="tab" id="poAddTabManual" onclick="setAddPOMode('manual')" style="padding:6px 14px;font-size:12px;cursor:pointer">Manual Entry</div>
+          </div>
+          <div id="poAddListMode" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <select id="poAddSelect" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+              <option value="">-- Select Ingredient --</option>
+            </select>
+            <input type="number" id="poAddQty" placeholder="Qty" min="1" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
+            <button class="btn btn-green btn-sm" onclick="confirmAddPOItem()">Add</button>
+            <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
+          </div>
+          <div id="poAddManualMode" style="display:none;gap:10px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="poManualName" placeholder="Item name" style="flex:1;min-width:160px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+            <input type="number" id="poManualQty" placeholder="Qty" min="1" style="width:80px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
+            <input type="text" id="poManualUnit" placeholder="Unit" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+            <input type="number" id="poManualCost" placeholder="Cost/unit" step="0.01" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+            <button class="btn btn-green btn-sm" onclick="confirmAddManualPO()">Add</button>
+            <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
+          </div>
         </div>
         <div class="table-scroll">
           <table><thead><tr><th><input type="checkbox" id="poCheckAll" onchange="toggleAllPO()" checked></th><th>Code</th><th>Ingredient</th><th class="text-right">Current Stock</th><th class="text-right">Weekly Need</th><th class="text-right" style="min-width:100px">Order Qty</th><th>Unit</th><th class="text-right">Est. Cost (฿)</th><th class="text-center">Priority</th></tr></thead>
@@ -1492,6 +1506,35 @@ function showAddPOItem() {
 
 function hideAddPOItem() {
   document.getElementById('poAddItemRow').style.display = 'none';
+}
+
+function setAddPOMode(mode) {
+  document.getElementById('poAddTabList').classList.toggle('active', mode==='list');
+  document.getElementById('poAddTabManual').classList.toggle('active', mode==='manual');
+  document.getElementById('poAddListMode').style.display = mode==='list' ? 'flex' : 'none';
+  document.getElementById('poAddManualMode').style.display = mode==='manual' ? 'flex' : 'none';
+}
+
+function confirmAddManualPO() {
+  const name = document.getElementById('poManualName').value.trim();
+  const qty = parseInt(document.getElementById('poManualQty').value) || 0;
+  const unit = document.getElementById('poManualUnit').value.trim() || 'pcs';
+  const costPer = parseFloat(document.getElementById('poManualCost').value) || 0;
+  if (!name) { alert('Please enter an item name.'); return; }
+  if (qty <= 0) { alert('Please enter a quantity.'); return; }
+  const code = 'MAN-' + String(Date.now()).slice(-6);
+  const manualIng = {code, name, unit, costPer, stock:0, minStock:0, orderUnit:unit, orderSize:qty};
+  poRecommendedRows.push({
+    ing: manualIng, dailyUse: 0, weeklyNeed: 0,
+    orderQty: qty, cost: qty * costPer,
+    priority: 'Normal', checked: true
+  });
+  document.getElementById('poManualName').value = '';
+  document.getElementById('poManualQty').value = '';
+  document.getElementById('poManualUnit').value = '';
+  document.getElementById('poManualCost').value = '';
+  hideAddPOItem();
+  renderPOTable();
 }
 
 function confirmAddPOItem() {
