@@ -454,9 +454,19 @@ tr:hover td { background: rgba(200, 162, 78, 0.03); }
         <div class="table-title">
           <span>Recommended Purchase Order</span>
           <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-gold btn-sm" onclick="showAddPOItem()">+ Add Item</button>
             <span class="status status-info">Week 16 / 2026</span>
             <span style="font-size:12px;color:var(--text2)">Selected: <b id="poSelectedCount">0</b> items | <b id="poSelectedValue" style="color:var(--gold)">฿0</b></span>
           </div>
+        </div>
+        <!-- Inline add item row -->
+        <div id="poAddItemRow" style="display:none;background:var(--surface2);padding:12px 16px;border-bottom:1px solid var(--border);gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="poAddSelect" style="flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+            <option value="">-- Select Ingredient --</option>
+          </select>
+          <input type="number" id="poAddQty" placeholder="Qty" min="1" style="width:100px;background:var(--bg);border:1px solid var(--border);color:var(--gold);padding:8px;border-radius:6px;text-align:center;font-weight:700">
+          <button class="btn btn-green btn-sm" onclick="confirmAddPOItem()">Add</button>
+          <button class="btn btn-outline btn-sm" onclick="hideAddPOItem()">Cancel</button>
         </div>
         <div class="table-scroll">
           <table><thead><tr><th><input type="checkbox" id="poCheckAll" onchange="toggleAllPO()" checked></th><th>Code</th><th>Ingredient</th><th class="text-right">Current Stock</th><th class="text-right">Weekly Need</th><th class="text-right" style="min-width:100px">Order Qty</th><th>Unit</th><th class="text-right">Est. Cost (฿)</th><th class="text-center">Priority</th></tr></thead>
@@ -1459,6 +1469,48 @@ function updatePOSummary() {
 function toggleAllPO() {
   const checked = document.getElementById('poCheckAll').checked;
   poRecommendedRows.forEach(r => r.checked = checked);
+  renderPOTable();
+}
+
+function showAddPOItem() {
+  const row = document.getElementById('poAddItemRow');
+  row.style.display = 'flex';
+  const sel = document.getElementById('poAddSelect');
+  const existingCodes = new Set(poRecommendedRows.map(r => r.ing.code));
+  sel.innerHTML = '<option value="">-- Select Ingredient --</option>' +
+    INGREDIENTS.filter(ing => !existingCodes.has(ing.code)).map(ing =>
+      `<option value="${ing.code}">${ing.name} (${ing.unit}) — stock: ${ing.stock.toLocaleString()}</option>`
+    ).join('');
+  document.getElementById('poAddQty').value = '';
+  sel.focus();
+  // Auto-fill qty when ingredient selected
+  sel.onchange = function() {
+    const ing = getIngredient(this.value);
+    if (ing) document.getElementById('poAddQty').value = ing.orderSize;
+  };
+}
+
+function hideAddPOItem() {
+  document.getElementById('poAddItemRow').style.display = 'none';
+}
+
+function confirmAddPOItem() {
+  const code = document.getElementById('poAddSelect').value;
+  const qty = parseInt(document.getElementById('poAddQty').value) || 0;
+  if (!code) { alert('Please select an ingredient.'); return; }
+  if (qty <= 0) { alert('Please enter a quantity.'); return; }
+  const ing = getIngredient(code);
+  if (!ing) return;
+  const usage = calcDailyUsage();
+  const dailyUse = usage[code] || 0;
+  const daysLeft = dailyUse > 0 ? Math.floor(ing.stock / dailyUse) : 999;
+  const priority = daysLeft <= 2 ? 'Urgent' : daysLeft <= 5 ? 'High' : 'Normal';
+  poRecommendedRows.push({
+    ing, dailyUse, weeklyNeed: Math.ceil(dailyUse * 7),
+    orderQty: qty, cost: qty * (ing.costPer || 0),
+    priority, checked: true
+  });
+  hideAddPOItem();
   renderPOTable();
 }
 
