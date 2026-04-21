@@ -56,7 +56,7 @@ h1, h2, h3, .serif { font-family: 'Noto Serif', serif; }
 .branch-select select option { background: #333; color: #fff; }
 
 /* Main */
-.main { margin-left: 260px; flex: 1; padding: 28px 40px; max-width: 1600px; }
+.main { margin-left: 260px; flex: 1; padding: 28px 40px; max-width: 1600px; height: 100vh; overflow-y: auto; }
 .page { display: none; }
 .page.active { display: block; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
@@ -430,6 +430,7 @@ tr:hover td { background: var(--surface2); }
         <div class="card"><div class="card-label">Low Stock</div><div class="card-value red" id="stockLow">0</div></div>
         <div class="card"><div class="card-label">Sufficient Stock</div><div class="card-value green" id="stockOk">0</div></div>
         <div class="card"><div class="card-label">Estimated Value</div><div class="card-value gold" id="stockValue">฿0</div></div>
+        <div class="card"><div class="card-label">Overstock</div><div class="card-value blue" id="stockOverstock">0</div><div class="card-sub">items above 3-week supply</div></div>
       </div>
 
       <div class="table-wrap">
@@ -440,12 +441,25 @@ tr:hover td { background: var(--surface2); }
               <option value="all">All Items</option>
               <option value="low">Low Stock Only</option>
               <option value="ok">Sufficient Only</option>
+              <option value="overstock">Overstock Only</option>
             </select>
           </div>
         </div>
         <div class="table-scroll">
           <table><thead><tr><th>Code</th><th>Ingredient</th><th class="text-right">Current Stock</th><th>Unit</th><th class="text-right">Daily Usage</th><th class="text-right">Days Left</th><th class="text-center">Status</th><th class="text-right">Reorder Qty</th></tr></thead>
           <tbody id="stockTable"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Stock Count Section -->
+      <div class="card" style="margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div><h3 style="font-family:'Noto Serif',serif;font-weight:900">Stock Count (Beginning / Ending)</h3><span style="font-size:12px;color:var(--text2)">Manual stock counting for shift reconciliation</span></div>
+          <button class="btn btn-gold" onclick="showStockCount()">Start Stock Count</button>
+        </div>
+        <div class="table-scroll" style="max-height:300px">
+          <table><thead><tr><th>Date</th><th>Time</th><th>Shift</th><th>Counted By</th><th class="text-right">Items Counted</th><th class="text-right">Total Variance</th><th class="text-center">Status</th></tr></thead>
+          <tbody id="stockCountHistoryTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text2)">No stock counts recorded yet.</td></tr></tbody></table>
         </div>
       </div>
     </div>
@@ -455,6 +469,7 @@ tr:hover td { background: var(--surface2); }
       <div class="page-header">
         <div><h2>Purchase Orders</h2><div class="subtitle" id="poSubtitle">Weekly order summary & order generation</div></div>
         <div style="display:flex;gap:10px">
+          <button class="btn btn-outline btn-sm" onclick="exportPOExcel()" style="display:flex;align-items:center;gap:4px"><span style="font-size:14px">📥</span> Export Excel</button>
           <button class="btn btn-outline" onclick="showPOHistory()">Order History</button>
           <button class="btn btn-gold" onclick="generatePO()">Generate Weekly PO</button>
         </div>
@@ -628,6 +643,24 @@ tr:hover td { background: var(--surface2); }
       <div class="form-group"><label>Discount (%)</label><input type="number" id="promoDiscount" value="10" min="0" max="100"></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('promoModal')">Cancel</button><button class="btn btn-gold" onclick="savePromo()">Create Promotion</button></div>
+  </div>
+</div>
+
+<!-- Stock Count Modal -->
+<div class="modal-overlay" id="stockCountModal">
+  <div class="modal" style="width:800px">
+    <div class="modal-header"><h3>Stock Count</h3><button class="modal-close" onclick="closeModal('stockCountModal')">&times;</button></div>
+    <div class="modal-body">
+      <div class="form-row" style="margin-bottom:16px">
+        <div class="form-group"><label>Shift</label><select id="scShift"><option value="Morning">Morning</option><option value="Evening">Evening</option></select></div>
+        <div class="form-group"><label>Counted By</label><input type="text" id="scCountedBy" placeholder="e.g. Somchai K."></div>
+      </div>
+      <div class="table-scroll" style="max-height:400px">
+        <table><thead><tr><th>Code</th><th>Ingredient</th><th>Unit</th><th class="text-right">Beginning Stock</th><th class="text-right">Ending Stock</th><th class="text-right">Variance</th></tr></thead>
+        <tbody id="stockCountBody"></tbody></table>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('stockCountModal')">Cancel</button><button class="btn btn-gold" onclick="saveStockCount()">Save Stock Count</button></div>
   </div>
 </div>
 
@@ -821,6 +854,7 @@ let emergencyHistory = branchState.fab.emergencyHistory;
 let poHistory = branchState.fab.poHistory;
 let pendingDeliveries = branchState.fab.pendingDeliveries;
 let receivingHistory = branchState.fab.receivingHistory;
+let stockCountHistory = [];
 
 function switchBranch(bId) {
   currentBranch = bId;
@@ -995,15 +1029,21 @@ function checkAlerts() {
   INGREDIENTS.forEach(ing => {
     if (eoSentCodes.has(ing.code)) return; // skip — emergency order already sent
     const dailyUse = usage[ing.code] || 0;
+    const weeklyNeed = dailyUse * 7;
     const daysLeft = dailyUse > 0 ? Math.floor(ing.stock / dailyUse) : 999;
     if (daysLeft <= 2 && dailyUse > 0) {
       alerts.push({type:'danger',icon:'🚨',title:`CRITICAL: ${ing.name}`,desc:`Only ${daysLeft} day(s) of stock remaining! Emergency order needed.`,code:ing.code,daysLeft});
     } else if (daysLeft <= 5 && dailyUse > 0) {
       alerts.push({type:'warn',icon:'⚠️',title:`Low Stock: ${ing.name}`,desc:`${daysLeft} days of stock remaining. Will run out before next order cycle.`,code:ing.code,daysLeft});
     }
+    // Overstock detection: stock > 3 weeks worth
+    if (weeklyNeed > 0 && ing.stock > weeklyNeed * 3) {
+      const weeksAbove = ((ing.stock / weeklyNeed) - 1).toFixed(1);
+      alerts.push({type:'overstock',icon:'📦',title:`Overstock: ${ing.name}`,desc:`Stock level is ${weeksAbove} weeks above weekly need. Consider reducing next order.`,code:ing.code,daysLeft});
+    }
   });
-  document.getElementById('alertBadge').textContent = alerts.length;
-  document.getElementById('alertBadge').style.display = alerts.length ? '' : 'none';
+  document.getElementById('alertBadge').textContent = alerts.filter(a=>a.type!=='overstock').length;
+  document.getElementById('alertBadge').style.display = alerts.filter(a=>a.type!=='overstock').length ? '' : 'none';
   return alerts;
 }
 
@@ -1369,27 +1409,32 @@ function savePOSSales() {
 // ==================== STOCK ====================
 function renderStock() {
   const usage = calcDailyUsage();
-  let lowCount = 0, okCount = 0, totalValue = 0;
+  let lowCount = 0, okCount = 0, overstockCount = 0, totalValue = 0;
   const rows = INGREDIENTS.map(ing => {
     const dailyUse = usage[ing.code] || 0;
+    const weeklyNeed = dailyUse * 7;
     const daysLeft = dailyUse > 0 ? Math.floor(ing.stock / dailyUse) : 999;
     const value = ing.stock * ing.costPer;
     totalValue += value;
     let status, cls;
+    const isOverstock = weeklyNeed > 0 && ing.stock > weeklyNeed * 3;
     if (daysLeft <= 2) { status = 'Critical'; cls = 'status-danger'; lowCount++; }
     else if (daysLeft <= 5) { status = 'Low'; cls = 'status-warn'; lowCount++; }
+    else if (isOverstock) { status = 'Overstock'; cls = 'status-info'; overstockCount++; okCount++; }
     else { status = 'OK'; cls = 'status-ok'; okCount++; }
     const reorderQty = daysLeft <= 7 ? Math.ceil((7 * dailyUse - ing.stock) / ing.orderSize) * ing.orderSize : 0;
-    return {ing, dailyUse, daysLeft, status, cls, reorderQty, value};
+    return {ing, dailyUse, daysLeft, weeklyNeed, status, cls, reorderQty, value};
   });
 
   document.getElementById('stockTotal').textContent = INGREDIENTS.length;
   document.getElementById('stockLow').textContent = lowCount;
   document.getElementById('stockOk').textContent = okCount;
   document.getElementById('stockValue').textContent = fmt(totalValue);
+  document.getElementById('stockOverstock').textContent = overstockCount;
 
   window._stockRows = rows;
   filterStock();
+  renderStockCountHistory();
 }
 
 function filterStock() {
@@ -1397,8 +1442,9 @@ function filterStock() {
   const filter = document.getElementById('stockFilter').value;
   const rows = (window._stockRows||[]).filter(r => {
     if (search && !r.ing.name.toLowerCase().includes(search) && !r.ing.code.toLowerCase().includes(search)) return false;
-    if (filter === 'low' && r.status === 'OK') return false;
-    if (filter === 'ok' && r.status !== 'OK') return false;
+    if (filter === 'low' && r.status !== 'Critical' && r.status !== 'Low') return false;
+    if (filter === 'ok' && r.status !== 'OK' && r.status !== 'Overstock') return false;
+    if (filter === 'overstock' && r.status !== 'Overstock') return false;
     return true;
   });
   document.getElementById('stockTable').innerHTML = rows.map(r =>
@@ -1724,7 +1770,7 @@ function viewPODetail(poId) {
     </table>`;
   // Reuse the receive modal
   document.querySelector('#receiveModal .modal-header h3').textContent = 'Purchase Order Detail';
-  document.querySelector('#receiveModal .modal-footer').innerHTML = `<button class="btn btn-outline" onclick="closeModal('receiveModal')">Close</button>${po.status==='Pending'?`<button class="btn btn-green" onclick="closeModal('receiveModal');confirmPO('${po.id}')">Confirm & Send</button>`:''}`;
+  document.querySelector('#receiveModal .modal-footer').innerHTML = `<button class="btn btn-outline btn-sm" onclick="exportSinglePO('${po.id}')" style="display:flex;align-items:center;gap:4px"><span style="font-size:14px">📥</span> Export</button><button class="btn btn-outline" onclick="closeModal('receiveModal')">Close</button>${po.status==='Pending'?`<button class="btn btn-green" onclick="closeModal('receiveModal');confirmPO('${po.id}')">Confirm & Send</button>`:''}`;
   document.getElementById('receiveModal').classList.add('show');
 }
 
@@ -1931,13 +1977,24 @@ function renderAlerts() {
     renderEmergencyLog();
     return;
   }
-  document.getElementById('alertsList').innerHTML = alerts.map(a =>
-    `<div class="alert-banner ${a.type==='warn'?'warn':''}">
+  document.getElementById('alertsList').innerHTML = alerts.map(a => {
+    let bannerStyle = '';
+    let bannerClass = a.type==='warn'?'warn':'';
+    let actionBtn = '';
+    if (a.type==='danger') {
+      actionBtn = `<button class="btn btn-red btn-sm" onclick="emergencyOrder('${a.code}')">Emergency Order</button>`;
+    } else if (a.type==='overstock') {
+      bannerStyle = 'background:rgba(0,62,198,.08);border:1px solid rgba(0,62,198,.15);';
+      actionBtn = `<button class="btn btn-outline btn-sm" onclick="navTo('purchase')">Adjust PO</button>`;
+    } else {
+      actionBtn = `<button class="btn btn-outline btn-sm" onclick="addToPO('${a.code}')">Add to PO</button>`;
+    }
+    return `<div class="alert-banner ${bannerClass}" style="${bannerStyle}">
       <span class="alert-icon">${a.icon}</span>
       <div class="alert-text"><div class="alert-title">${a.title}</div><div class="alert-desc">${a.desc}</div></div>
-      ${a.type==='danger' ? `<button class="btn btn-red btn-sm" onclick="emergencyOrder('${a.code}')">Emergency Order</button>` : `<button class="btn btn-outline btn-sm" onclick="addToPO('${a.code}')">Add to PO</button>`}
-    </div>`
-  ).join('');
+      ${actionBtn}
+    </div>`;
+  }).join('');
   renderEmergencyLog();
 }
 
@@ -2053,10 +2110,140 @@ function clearAlerts() { alerts = []; renderAlerts(); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function exportDailyReport() { alert('Daily report exported to PDF.'); }
 
+// ==================== EXPORT PO TO EXCEL ====================
+function exportPOExcel() {
+  const selected = poRecommendedRows.filter(r => r.checked && r.orderQty > 0);
+  if (!selected.length) { alert('No items selected to export.'); return; }
+  const BOM = '\uFEFF';
+  let csv = BOM + 'Code,Ingredient,Current Stock,Weekly Need,Order Qty,Unit,Est. Cost,Priority\n';
+  let totalCost = 0;
+  selected.forEach(r => {
+    totalCost += r.cost;
+    csv += `${r.ing.code},"${r.ing.name}",${r.ing.stock},${Math.round(r.weeklyNeed)},${r.orderQty},${r.ing.orderUnit},${Math.round(r.cost)},${r.priority}\n`;
+  });
+  csv += `,,,,,,${Math.round(totalCost)},TOTAL\n`;
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'PO_Week16_2026.csv';
+  a.click();
+}
+
+function exportSinglePO(poId) {
+  const po = poHistory.find(p => p.id === poId);
+  if (!po || !po.items || !po.items.length) { alert('No items to export.'); return; }
+  const BOM = '\uFEFF';
+  let csv = BOM + 'Code,Ingredient,Order Qty,Unit,Est. Cost,Priority\n';
+  let totalCost = 0;
+  po.items.forEach(it => {
+    totalCost += it.cost;
+    csv += `${it.code},"${it.name}",${it.orderQty},${it.unit},${Math.round(it.cost)},${it.priority}\n`;
+  });
+  csv += `,,,,${Math.round(totalCost)},TOTAL\n`;
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${po.id}_${po.date}.csv`;
+  a.click();
+}
+
+// ==================== STOCK COUNT ====================
+function showStockCount() {
+  const tbody = document.getElementById('stockCountBody');
+  tbody.innerHTML = INGREDIENTS.map(ing =>
+    `<tr>
+      <td style="font-family:monospace;font-size:11px">${ing.code}</td>
+      <td style="font-size:12px">${ing.name}</td>
+      <td>${ing.unit}</td>
+      <td class="text-right"><input type="number" value="${ing.stock}" readonly style="width:100px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;text-align:right;font-size:12px" data-code="${ing.code}" data-field="beginning"></td>
+      <td class="text-right"><input type="number" value="" placeholder="${ing.stock}" min="0" style="width:100px;background:var(--surface-card);border:1px solid var(--border);color:var(--gold);padding:4px 8px;border-radius:4px;text-align:right;font-weight:700;font-size:12px" data-code="${ing.code}" data-field="ending" oninput="calcCountVariance(this)"></td>
+      <td class="text-right"><span data-code="${ing.code}" data-field="variance" style="font-weight:700;font-size:12px">-</span></td>
+    </tr>`
+  ).join('');
+  document.getElementById('scCountedBy').value = '';
+  document.getElementById('stockCountModal').classList.add('show');
+}
+
+function calcCountVariance(el) {
+  const code = el.dataset.code;
+  const beginEl = document.querySelector(`input[data-code="${code}"][data-field="beginning"]`);
+  const varEl = document.querySelector(`span[data-code="${code}"][data-field="variance"]`);
+  const beginning = parseFloat(beginEl.value) || 0;
+  const ending = parseFloat(el.value);
+  if (isNaN(ending) || el.value === '') {
+    varEl.textContent = '-';
+    varEl.style.color = '';
+    return;
+  }
+  const variance = ending - beginning;
+  varEl.textContent = (variance >= 0 ? '+' : '') + variance.toLocaleString();
+  varEl.style.color = variance < 0 ? 'var(--red)' : variance > 0 ? 'var(--green)' : 'var(--text2)';
+}
+
+function saveStockCount() {
+  const countedBy = document.getElementById('scCountedBy').value.trim();
+  if (!countedBy) { alert('Please enter who is counting.'); return; }
+  const shift = document.getElementById('scShift').value;
+  const now = new Date();
+  const items = [];
+  let hasEnding = false;
+  INGREDIENTS.forEach(ing => {
+    const beginEl = document.querySelector(`input[data-code="${ing.code}"][data-field="beginning"]`);
+    const endEl = document.querySelector(`input[data-code="${ing.code}"][data-field="ending"]`);
+    const beginning = parseFloat(beginEl.value) || 0;
+    const endVal = endEl.value.trim();
+    if (endVal === '') return; // skip items not counted
+    hasEnding = true;
+    const ending = parseFloat(endVal) || 0;
+    const variance = ending - beginning;
+    items.push({code:ing.code, name:ing.name, beginning, ending, variance});
+    // Update actual stock to ending value
+    ing.stock = ending;
+  });
+  if (!hasEnding) { alert('Please enter ending stock for at least one item.'); return; }
+  const record = {
+    id: 'SC-' + String(stockCountHistory.length + 1).padStart(3,'0'),
+    date: now.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'numeric'}),
+    time: now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}),
+    shift,
+    countedBy,
+    items
+  };
+  stockCountHistory.unshift(record);
+  closeModal('stockCountModal');
+  renderStock();
+  checkAlerts();
+  alert(`Stock count saved! ${items.length} items counted.\nStock levels updated to ending values.`);
+}
+
+function renderStockCountHistory() {
+  const el = document.getElementById('stockCountHistoryTable');
+  if (!el) return;
+  if (!stockCountHistory.length) {
+    el.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text2)">No stock counts recorded yet.</td></tr>';
+    return;
+  }
+  el.innerHTML = stockCountHistory.map(sc => {
+    const totalVariance = sc.items.reduce((s,it) => s + it.variance, 0);
+    const hasDisc = sc.items.some(it => it.variance !== 0);
+    const cls = hasDisc ? 'status-warn' : 'status-ok';
+    const statusText = hasDisc ? 'Variance Found' : 'Matched';
+    return `<tr>
+      <td>${sc.date}</td>
+      <td>${sc.time}</td>
+      <td>${sc.shift}</td>
+      <td>${sc.countedBy}</td>
+      <td class="text-right">${sc.items.length}</td>
+      <td class="text-right" style="color:${totalVariance<0?'var(--red)':totalVariance>0?'var(--green)':'var(--text2)'}"><b>${totalVariance>=0?'+':''}${Math.round(totalVariance).toLocaleString()}</b></td>
+      <td class="text-center"><span class="status ${cls}">${statusText}</span></td>
+    </tr>`;
+  }).join('');
+}
+
 // ==================== INIT ====================
 renderDashboard();
 updateReceivingBadge();
-document.getElementById('posDate').value = '2026-04-16';
+try { document.getElementById('posDate').value = '2026-04-16'; } catch(e) {}
 </script>
 </body>
 </html>
